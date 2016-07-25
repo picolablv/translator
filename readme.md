@@ -28,7 +28,7 @@ dev docs: https://translate.yandex.com/developers
 ```php
 
 $translateProvider = new Picolab\Translator\Providers\YandexProvider([
-     'apikey' => 'your api key',
+     'api-key' => 'your api key',
  ]);
  
 $translator = new Picolab\Translator\Translator();
