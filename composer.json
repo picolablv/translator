@@ -1,0 +1,22 @@
+{
+    "name": "picolab/translator",
+    "description": "Simple translating class with translation providers",
+    "keywords": ["translate", "translations", "yandex"],
+    "type": "library",
+    "require": {
+        "guzzlehttp/guzzle": "^6.2"
+    },
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Andris Šaudinis",
+            "email": "andris@picolab.lv"
+        }
+    ],
+    "minimum-stability": "dev",
+    "autoload": {
+        "psr-4": {
+          "Picolab\\Translator\\": "src/"
+        }
+    }
+}
