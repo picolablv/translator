@@ -43,7 +43,7 @@ $translation = $translator->from('en')->to('ru')->translate('Some other language
 ``` 
 
 
-2. Tilde Machine Translation (Tilde MT) provider
+3. Tilde Machine Translation (Tilde MT) provider
 
 dev docs: http://www.tilde.com/mt/tools/api
 
@@ -57,16 +57,18 @@ $translateProvider = new Picolab\Translator\Providers\LetsMTProvider([
 $translator = new Picolab\Translator\Translator();
 $translator->setProvider($translateProvider);
 
-// Due to the fact that available languages is already defined in the system, you do not need to specify them there
+// Due to the fact that available languages is already defined in the MT system, 
+// you do not need to specify them there
 // Translation system EN-LV
 $translation = $translator->translate('Some other language');
 
  // output translation 
  echo $translation;
 ``` 
-todo:
 
-* Translating providers error handling
-* Use the full capabilities of the providers translating system ( translate array, etc...)
+Todo:
+- [ ] Google Translate Provider
+- [ ] Translating providers error handling
+- [ ] Use the full capabilities of the providers translating system ( translate array, etc...)
 
 License: MIT
