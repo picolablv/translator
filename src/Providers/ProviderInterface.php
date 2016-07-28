@@ -34,4 +34,12 @@ interface ProviderInterface
      * @return mixed
      */
     public function getResponse();
+
+    /**
+     * @param $requestUrl
+     * @param string $method
+     * @param array $data
+     * @return mixed
+     */
+    public function send($requestUrl, $method = 'GET', $data = array());
 }
