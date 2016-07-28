@@ -10,19 +10,24 @@ class YandexProvider implements ProviderInterface
     /**
      * @var
      */
-    protected $apiUrl = 'https://translate.yandex.net/api/v1.5/tr.json/translate';
+    protected $apiUrl = 'https://translate.yandex.net/api/v1.5/tr.json/';
 
 
     /**
      * @var
      */
-    protected $params = array('key', 'text', 'lang', 'format' => 'plain', 'options', 'source', 'target',);
+    protected $params;
 
 
     /**
      * @var
      */
     protected $response;
+
+    /**
+     * @var
+     */
+    protected $client;
 
 
     /**
@@ -32,9 +37,7 @@ class YandexProvider implements ProviderInterface
      */
     public function __construct($config = null)
     {
-        if (isset($config['api-key'])) {
-            $this->setParam('key', $config['api-key']);
-        }
+        $this->params = $config;
     }
 
 
@@ -57,27 +60,58 @@ class YandexProvider implements ProviderInterface
      */
     public function makeRequest(Client $guzzleClientInstance)
     {
+        $this->client = $guzzleClientInstance;
+
+        $query = ['key' => $this->params['key'], 'lang' => $this->params['target'],];
+
         if (isset($this->params['source'])) {
-            $this->params['lang'] = $this->params['source'] . '-' . $this->params['target'];
-        } else {
-            $this->params['lang'] = $this->params['target'];
+            $query['lang'] = $this->params['source'] . '-' . $this->params['target'];
         }
 
-        unset($this->params['source'], $this->params['target']);
-        $sendUrl = $this->apiUrl . '?' . http_build_query($this->params);
+        $query['text'] = $this->params['text'];
+
+        $requestUrl = $this->apiUrl . 'translate';
+
+        if (is_array($this->params['text'])) {
+            $query['text'] = json_encode($this->params['text']);
+        }
 
         try {
-            $response = $guzzleClientInstance->request('GET', $sendUrl);
-            if ($response) {
-                $this->response = json_decode($response->getBody());
 
-                return $this;
+            $response = $this->send($requestUrl, 'POST', ['query' => $query]);
+            if ($response) {
+                $this->response['code'] = $response->getStatusCode();
+                $resp = json_decode($response->getBody()->getContents(), true);
+                if (isset($resp['lang'])) {
+                    list($this->response['from'], $this->response['to']) = explode('-', $resp['lang']);
+                }
+
+                $this->response['text'] = $resp['text'][0];
+                if (is_array($this->params['text'])) {
+                    $this->response['text'] = json_decode($resp['text'][0], true);
+                }
             }
+
+            return $this;
+
         } catch (ClientException $e) {
-            $this->response = ClientException::getResponseBodySummary($e->getResponse());
+            $this->response['code'] = $e->getCode();
+            $this->response['error'] = json_decode(ClientException::getResponseBodySummary($e->getResponse()), true);
         }
 
         return $this;
+    }
+
+
+    /**
+     * @param $requestUrl
+     * @param string $method
+     * @param array $data
+     * @return mixed
+     */
+    public function send($requestUrl, $method = 'GET', $data = array())
+    {
+        return $this->client->request($method, $requestUrl, $data);
     }
 
 
@@ -86,9 +120,9 @@ class YandexProvider implements ProviderInterface
      */
     public function getTranslated()
     {
-        if (isset($this->response->text[0])) {
+        if (isset($this->response['text'][0])) {
 
-            return $this->response->text[0];
+            return $this->response['text'][0];
         }
 
         return $this->params['text'];
@@ -109,10 +143,6 @@ class YandexProvider implements ProviderInterface
      */
     public function getResponse()
     {
-        if (!is_object($this->response)) {
-            return json_decode($this->response);
-        }
-
         return $this->response;
     }
 }
