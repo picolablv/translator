@@ -11,7 +11,7 @@ class BingProvider implements ProviderInterface
     /**
      * @var
      */
-    protected $apiUrl = 'http://api.microsofttranslator.com/V2/Http.svc/Translate';
+    protected $apiUrl = 'http://api.microsofttranslator.com/V2/Http.svc/';
 
     /**
      * @var string
@@ -26,14 +26,17 @@ class BingProvider implements ProviderInterface
     /**
      * @var
      */
-    protected $params = ['text' => '', 'contentType' => 'text/plain', 'category' => 'general', 'to' => ''];
-
+    protected $params;
 
     /**
      * @var
      */
     protected $response;
 
+    /**
+     * @var
+     */
+    protected $client;
 
     /**
      * BingProvider constructor.
@@ -42,13 +45,7 @@ class BingProvider implements ProviderInterface
      */
     public function __construct($config = null)
     {
-        if (isset($config['client_id'])) {
-            $this->setParam('client_id', $config['client_id']);
-        }
-        if (isset($config['client_secret'])) {
-            $this->setParam('client_secret', $config['client_secret']);
-        }
-
+        $this->params = $config;
     }
 
 
@@ -71,35 +68,87 @@ class BingProvider implements ProviderInterface
      */
     public function makeRequest(Client $guzzleClientInstance)
     {
+        $this->client = $guzzleClientInstance;
+
         if (empty($this->accessToken)) {
-            $this->accessToken = $this->getAccessToken($guzzleClientInstance);
+            $this->accessToken = $this->getAccessToken();
         }
 
+        $query = [
+            'from' => '',
+            'to' => $this->params['target'],
+            'text'=> $this->params['text'],
+        ];
 
         if (isset($this->params['source'])) {
-            $this->params['from'] = $this->params['source'];
+            $query['from'] = $this->params['source'];
         }
 
-        $this->params['to'] = $this->params['target'];
-
-
-        unset($this->params['source'], $this->params['target'], $this->params['client_id'], $this->params['client_secret']);
-
-        $sendUrl = $this->apiUrl . '?' . http_build_query($this->params);
-
         try {
-            $response = $guzzleClientInstance->request('GET', $sendUrl, ['headers' => ['Authorization' => 'Bearer ' . $this->accessToken]]);
 
-            if ($response) {
-                $this->response = $response->getBody()->getContents();
+            if (!is_array($this->params['text'])) {
+                $requestUrl = $this->apiUrl . 'Translate';
+                $response = $this->send($requestUrl, 'GET', ['headers' => ['Authorization' => 'Bearer ' . $this->accessToken], 'query' => $query]);
+                if ($response) {
+                    $this->response['code'] = $response->getStatusCode();
+                    $xmlObj = simplexml_load_string($response->getBody()->getContents());
+                    $this->response['from'] = $query['from'];
+                    $this->response['to'] = $query['to'];
+                    $this->response['text'][] = (string)$xmlObj;
 
-                return $this;
+                    return $this;
+                }
+
+            } else {
+
+                $requestUrl = $this->apiUrl . 'TranslateArray';
+                // Create xml data for request
+                $requestXml = "<TranslateArrayRequest><AppId/>";
+                if (isset($query['from']) and !empty($query['from'])) {
+                    $requestXml .= '<From>'.$query['from'].'</From>';
+                }
+                $requestXml .= '<Texts>';
+                foreach ($query['text'] as $text) {
+                    $requestXml .= '<string xmlns="http://schemas.microsoft.com/2003/10/Serialization/Arrays">' . $text . '</string>';
+                }
+                $requestXml .= '</Texts><To>' . $query['to'] . '</To></TranslateArrayRequest>';
+
+                $response = $this->send($requestUrl, 'POST', ['headers' => ['Content-Type' => 'text/xml; charset=UTF-8', 'Authorization' => 'Bearer ' . $this->accessToken], 'body' => $requestXml]);
+
+                if($response) {
+
+                    $this->response['code'] = $response->getStatusCode();
+                    $xmlObj = simplexml_load_string($response->getBody()->getContents());
+
+                    foreach ($xmlObj->TranslateArrayResponse as $translatedArrObj) {
+                        $this->response['from'] = (string)$translatedArrObj->From;
+                        $this->response['to'] = $query['to'];
+                        $this->response['text'][] = (string)$translatedArrObj->TranslatedText;
+                    }
+
+                    return $this;
+                }
+
             }
+
         } catch (ClientException $e) {
-            $this->response = ClientException::getResponseBodySummary($e->getResponse());
+            $this->response['code'] = $e->getCode();
+            $this->response['error'] =  ClientException::getResponseBodySummary($e->getResponse());
         }
 
         return $this;
+    }
+
+
+    /**
+     * @param $requestUrl
+     * @param string $method
+     * @param array $data
+     * @return mixed
+     */
+    public function send($requestUrl, $method = 'GET', $data = array())
+    {
+        return $this->client->request($method, $requestUrl, $data);
     }
 
 
@@ -108,9 +157,9 @@ class BingProvider implements ProviderInterface
      */
     public function getTranslated()
     {
-        if (isset($this->response) and is_string($this->response)) {
+        if (isset($this->response['text'])) {
 
-            return $this->response;
+            return $this->response['text'][0];
         }
 
         return $this->params['text'];
@@ -131,16 +180,11 @@ class BingProvider implements ProviderInterface
      */
     public function getResponse()
     {
-        if (is_string($this->response)) {
-            return $this->response;
-        }
-
-        if (!is_object($this->response)) {
-            return json_decode($this->response);
-        }
 
         return $this->response;
     }
+
+
 
     /**
      * @return array
@@ -151,11 +195,11 @@ class BingProvider implements ProviderInterface
         return $this->params;
     }
 
+
     /**
-     * @param Client $guzzleClientInstance
-     * @return $this
+     * @return string|bool
      */
-    public function getAccessToken(Client $guzzleClientInstance)
+    private function getAccessToken()
     {
         $paramArr = [
             'grant_type' => 'client_credentials',
@@ -165,7 +209,7 @@ class BingProvider implements ProviderInterface
         ];
 
         try {
-            $response = $guzzleClientInstance->post($this->authUrl, ['form_params' => $paramArr]);
+            $response = $this->client->request('POST', $this->authUrl, ['form_params' => $paramArr]);
             if ($response) {
                 $tokenRequestProperties = json_decode($response->getBody());
 
@@ -176,6 +220,6 @@ class BingProvider implements ProviderInterface
             $this->response = ClientException::getResponseBodySummary($e->getResponse());
         }
 
-        return $this;
+        return false;
     }
 }
