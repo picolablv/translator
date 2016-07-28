@@ -10,13 +10,15 @@ class LetsMTProvider implements ProviderInterface
     /**
      * @var
      */
-    protected $apiUrl = 'https://www.letsmt.eu/ws/service.svc/json/Translate';
+    protected $apiUrl = 'https://www.letsmt.eu/ws/service.svc/json/';
 
+
+    protected $systemData;
 
     /**
      * @var
      */
-    protected $params = array('appID', 'uiLanguageID', 'systemID', 'text', 'options');
+    protected $params;
 
 
     /**
@@ -26,18 +28,19 @@ class LetsMTProvider implements ProviderInterface
 
 
     /**
-     * YandexProvider constructor.
+     * @var
+     */
+    protected $client;
+
+
+    /**
+     * LetsMTProvider constructor.
      *
      * @param null $config
      */
     public function __construct($config = null)
     {
-        if (isset($config['system_id'])) {
-            $this->setParam('systemID', $config['system_id']);
-        }
-        if (isset($config['client_id'])) {
-            $this->setParam('client_id', $config['client_id']);
-        }
+        $this->params = $config;
     }
 
 
@@ -60,23 +63,60 @@ class LetsMTProvider implements ProviderInterface
      */
     public function makeRequest(Client $guzzleClientInstance)
     {
+        $this->client = $guzzleClientInstance;
 
+        $query = ['systemID' => $this->params['systemID'],];
 
-        unset($this->params['source'], $this->params['target']);
-        $sendUrl = $this->apiUrl . '?' . http_build_query($this->params);
+        // get some systemInfo
+        if (empty($this->systemData)) {
+            $this->getSystemInfo();
+        }
 
         try {
-            $response = $guzzleClientInstance->request('GET', $sendUrl, ['headers' => ['client-id' => $this->params['client_id']]]);
+
+            $requestUrl = $this->apiUrl . 'Translate';
+            $query['text'] = $this->params['text'];
+
+            if (is_array($this->params['text'])) {
+                $requestUrl = $this->apiUrl . 'TranslateArray';
+                $query['textArray'] = '["' . implode('","', $this->params['text']) . '"]';
+            }
+
+            $response = $this->send($requestUrl, 'GET', ['query' => $query]);
+
             if ($response) {
-                $this->response = json_decode($response->getBody());
+                $this->response['code'] = $response->getStatusCode();
+                if (is_array($this->params['text'])) {
+                    $returnArray = $response->getBody()->getContents();
+                    $this->response['text'] = json_decode($returnArray, true);
+                } else {
+                    $this->response['text'][] = $response->getBody()->getContents();
+                }
+
 
                 return $this;
             }
+
         } catch (ClientException $e) {
-            $this->response = ClientException::getResponseBodySummary($e->getResponse());
+            $this->response['code'] = $e->getCode();
+            $this->response['error'] = ClientException::getResponseBodySummary($e->getResponse());
         }
 
         return $this;
+    }
+
+
+    /**
+     * @param $requestUrl
+     * @param string $method
+     * @param array $data
+     * @return mixed
+     */
+    public function send($requestUrl, $method = 'GET', $data = array())
+    {
+        $data = array_merge_recursive($data, ['headers' => ['client-id' => $this->params['client_id']]]);
+
+        return $this->client->request($method, $requestUrl, $data);
     }
 
 
@@ -85,9 +125,9 @@ class LetsMTProvider implements ProviderInterface
      */
     public function getTranslated()
     {
-        if (isset($this->response)) {
+        if (isset($this->response['text'])) {
 
-            return $this->response;
+            return $this->response['text'][0];
         }
 
         return $this->params['text'];
@@ -108,10 +148,33 @@ class LetsMTProvider implements ProviderInterface
      */
     public function getResponse()
     {
-        if (!is_object($this->response)) {
-            return json_decode($this->response);
+        return $this->response;
+    }
+
+
+    /**
+     * @return $this
+     */
+    private function getSystemInfo()
+    {
+
+        $response = $this->send($this->apiUrl . 'GetSystemList', 'GET', []);
+
+        $this->systemData = json_decode($response->getBody()->getContents());
+        foreach ($this->systemData->System as $system) {
+            if ($system->ID == $this->params['systemID']) {
+                foreach ($system->Metadata as $metadata) {
+                    if ($metadata->Key == 'srclang') {
+                        $this->response['from'] = $metadata->Value;
+                    }
+                    if ($metadata->Key == 'trglang') {
+                        $this->response['to'] = $metadata->Value;
+                    }
+                }
+                continue;
+            }
         }
 
-        return $this->response;
+        return $this;
     }
 }
