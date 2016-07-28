@@ -70,7 +70,7 @@ class Translator
      */
     public function translate($string)
     {
-        $this->provider->setParam('text', trim($string));
+        $this->provider->setParam('text', $this->handleValue($string));
 
         if ($this->guzzleClientInstance == null) {
             $guzzleClientInstance = new  Client();
@@ -89,9 +89,26 @@ class Translator
      */
     public function setGuzzleInstance(Client $guzzleClientInstance)
     {
-
         $this->guzzleClientInstance = $guzzleClientInstance;
 
         return $this;
+    }
+
+
+    /**
+     * @param $values
+     * @return string
+     */
+    private function handleValue($values)
+    {
+        if (is_array($values)) {
+            foreach ($values as &$value) {
+                $value = $this->handleValue($value);
+            }
+
+            return $values;
+        }
+
+        return trim($values);
     }
 }
